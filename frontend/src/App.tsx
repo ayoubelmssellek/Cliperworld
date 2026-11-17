@@ -32,6 +32,7 @@ type Job = {
   error?: string | null
   clips: Clip[]
   vod_id?: string | null
+  platform?: string
   meta?: {
     stage?: string
     progress?: number
@@ -122,7 +123,9 @@ export default function App() {
   const activeStage = stageIndex(job?.meta?.stage || job?.status)
   const coreTools = health
     ? Object.entries(health.tools).filter(([name]) =>
-        ['ffmpeg', 'twitch_downloader', 'openshorts', 'whisperx', 'auto_editor'].includes(name),
+        ['ffmpeg', 'twitch_downloader', 'yt_dlp', 'openshorts', 'whisperx', 'auto_editor'].includes(
+          name,
+        ),
       )
     : []
   const toolEntries = showAllTools && health ? Object.entries(health.tools) : coreTools
@@ -157,18 +160,18 @@ export default function App() {
           Cliper<span>world</span>
         </h1>
         <p className="tagline">
-          Paste a Twitch VOD. We read chat blow-ups, cut the moments, and package
-          clips for Shorts.
+          Paste a Twitch VOD or YouTube link. We find chat blow-ups (or loud
+          moments), cut clips, and package them for Shorts.
         </p>
 
         <form className="composer" onSubmit={onSubmit}>
-          <label htmlFor="vod">Twitch VOD link</label>
+          <label htmlFor="vod">Twitch or YouTube link</label>
           <div className="row">
             <input
               id="vod"
               type="url"
               required
-              placeholder="https://www.twitch.tv/videos/123456789"
+              placeholder="https://www.twitch.tv/videos/… or https://youtube.com/watch?v=…"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
             />
@@ -185,7 +188,7 @@ export default function App() {
               />
               Try captions
             </label>
-            <span className="meta-note">Twitch first · YouTube & Kick next</span>
+            <span className="meta-note">Twitch + YouTube · Kick next</span>
           </div>
         </form>
 
@@ -228,8 +231,8 @@ export default function App() {
                     )}
                   </div>
                   <div className="cover-meta">
-                    <p className="streamer">{vod?.streamer || 'Twitch VOD'}</p>
-                    <h2>{vod?.title || `VOD ${job.vod_id || '…'}`}</h2>
+                    <p className="streamer">{vod?.streamer || job.platform || 'Stream'}</p>
+                    <h2>{vod?.title || `Video ${job.vod_id || '…'}`}</h2>
                     <div className="cover-stats">
                       {vod?.length_label && <span>{vod.length_label}</span>}
                       {vod?.category && <span>{vod.category}</span>}
@@ -307,8 +310,8 @@ export default function App() {
       )}
 
       <p className="foot">
-        Stack from vendor repos: TwitchDownloader · OpenShorts · WhisperX · FFmpeg ·
-        Auto-Editor · PySceneDetect. Only clip streamers who allow it.
+        Stack: TwitchDownloader · yt-dlp · OpenShorts · WhisperX · FFmpeg ·
+        Auto-Editor · PySceneDetect. Only clip creators who allow it.
       </p>
     </div>
   )

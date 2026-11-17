@@ -23,7 +23,10 @@ class JobStatus(str, Enum):
 
 
 class CreateJobRequest(BaseModel):
-    url: str = Field(..., description="Twitch VOD URL, e.g. https://www.twitch.tv/videos/123")
+    url: str = Field(
+        ...,
+        description="Twitch VOD or YouTube URL, e.g. https://www.twitch.tv/videos/123 or https://youtube.com/watch?v=...",
+    )
     max_clips: int | None = Field(default=None, ge=1, le=30)
     with_captions: bool = True
 

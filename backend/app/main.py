@@ -13,6 +13,7 @@ from app.jobs import create_job, get_job, list_jobs
 from app.models import CreateJobRequest, HealthResponse, JobResponse
 from app.paths import vendor_status
 from app.pipeline.twitch import twitch_downloader_available
+from app.pipeline.youtube import yt_dlp_available
 from app.pipeline.cutter import ffmpeg_available
 from app.runner import run_job
 
@@ -36,6 +37,7 @@ def health() -> HealthResponse:
     tools = {
         "ffmpeg": ffmpeg_available(),
         "twitch_downloader": twitch_downloader_available(),
+        "yt_dlp": yt_dlp_available(),
         "auto_editor": shutil.which(settings.auto_editor_bin) is not None
         or (settings.auto_editor_dir / "auto_editor").exists(),
         "whisperx": False,
@@ -54,7 +56,10 @@ def health() -> HealthResponse:
 @app.post("/api/jobs", response_model=JobResponse)
 def start_job(payload: CreateJobRequest, background: BackgroundTasks) -> JobResponse:
     max_clips = payload.max_clips or settings.max_clips
-    job = create_job(payload.url, max_clips=max_clips, with_captions=payload.with_captions)
+    try:
+        job = create_job(payload.url, max_clips=max_clips, with_captions=payload.with_captions)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     background.add_task(run_job, job.id)
     return JobResponse(job=job)
 
@@ -68,7 +73,8 @@ def jobs() -> list[JobResponse]:
 def job_detail(job_id: str) -> JobResponse:
     job = get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        # Avoid 500s during brief write windows; client will poll again
+        raise HTTPException(status_code=404, detail="Job not found or busy")
     return JobResponse(job=job)
 
 

@@ -1,8 +1,8 @@
 # Cliperworld
 
-Web app that turns **Twitch VODs** into Shorts-ready clips by detecting **chat blow-ups**, cutting around those moments, then optionally adding captions.
+Web app that turns **Twitch VODs** and **YouTube** videos into Shorts-ready clips by detecting **chat blow-ups** (or audio spikes when chat is missing), cutting around those moments, then optionally adding captions.
 
-Twitch first. YouTube + Kick + live mode come next.
+Kick + live mode come next.
 
 Only clip streamers who allow it.
 
@@ -16,7 +16,8 @@ Only clip streamers who allow it.
 | **Python 3.11+** | Backend API |
 | **Node.js 20+** | Frontend |
 | **FFmpeg** | Must be on PATH (`ffmpeg -version`) |
-| **Windows** | Current scripts target Windows (TwitchDownloaderCLI `.exe`) |
+| **yt-dlp** | Installed via `pip install -r requirements.txt` (YouTube) |
+| **Windows** | TwitchDownloaderCLI `.exe` fetch script targets Windows |
 
 ---
 
@@ -59,16 +60,18 @@ npm run dev
 
 Open **http://127.0.0.1:5173**
 
-You should see tool pills like `ffmpeg: ready` and `twitch downloader: ready`.
+You should see tool pills like `ffmpeg: ready`, `twitch downloader: ready`, and `yt dlp: ready`.
 
-### 4. Clip a VOD
+### 4. Clip a video
 
-1. Paste a Twitch VOD URL (`https://www.twitch.tv/videos/...`)
+1. Paste a **Twitch VOD** (`https://www.twitch.tv/videos/...`) or **YouTube** link
 2. Click **Find clips**
 3. Watch cover + progress (download → chat → spikes → cut → captions)
 4. Download finished clips from the job panel
 
-Default download quality is **720p60** (faster than 1080p). Long VODs still take time.
+**Twitch:** downloads via TwitchDownloaderCLI at **720p60** by default.  
+**YouTube:** downloads via **yt-dlp**; uses live chat when available, otherwise audio spikes.  
+Long videos still take time.
 
 Optional: copy `.env.example` → `.env` to change quality / paths.
 
@@ -89,8 +92,9 @@ cliperworld/
 
 | Tool | Role |
 |---|---|
-| TwitchDownloaderCLI | Download VOD + chat |
-| Chat spike detector | Find hype moments (no AI required) |
+| TwitchDownloaderCLI | Download Twitch VOD + chat |
+| yt-dlp | Download YouTube video + live chat |
+| Chat / audio spike detector | Find hype moments (no AI required) |
 | FFmpeg | Cut / encode |
 | Auto-Editor | Optional silence trim |
 | PySceneDetect | Optional snap to scene cuts |

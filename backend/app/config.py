@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     max_clips: int = 12
     # Prefer 720p for faster MVP downloads (1080p VODs can be multi-GB)
     twitch_download_quality: str = "720p60"
+    # yt-dlp format string for YouTube
+    youtube_format: str = "bv*[height<=720]+ba/b[height<=720]/b"
 
 
 settings = Settings()
