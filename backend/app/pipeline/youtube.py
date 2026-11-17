@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import shutil
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -27,6 +27,8 @@ def fetch_youtube_info(url: str) -> dict[str, Any]:
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
+        "socket_timeout": 30,
+        "retries": 5,
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
@@ -62,9 +64,11 @@ def download_youtube_video_and_chat(
 ) -> tuple[Path, Path | None]:
     """
     Download YouTube video (+ live chat replay when available) via yt-dlp.
+    Retries on flaky ConnectionReset / fragment errors.
     https://github.com/yt-dlp/yt-dlp
     """
     import yt_dlp
+    from yt_dlp.utils import DownloadError
 
     out_dir.mkdir(parents=True, exist_ok=True)
     outtmpl = str(out_dir / "%(id)s.%(ext)s")
@@ -82,7 +86,7 @@ def download_youtube_video_and_chat(
                     "bytes": downloaded,
                     "bytes_label": _fmt_bytes(downloaded),
                     "total_bytes": int(total or 0),
-                    "line": d.get("_percent_str") or d.get("info_dict", {}).get("id") or "downloading",
+                    "line": (d.get("_percent_str") or "").strip() or "downloading",
                 },
             )
         elif status == "finished":
@@ -91,24 +95,78 @@ def download_youtube_video_and_chat(
     if on_progress:
         on_progress("video_download_start", {"quality": settings.youtube_format, "output": str(out_dir)})
 
-    opts: dict[str, Any] = {
-        "outtmpl": outtmpl,
-        "format": settings.youtube_format,
-        "merge_output_format": "mp4",
-        "writesubtitles": True,
-        "writeautomaticsub": False,
-        "subtitleslangs": ["live_chat"],
-        "skip_download": False,
-        "quiet": True,
-        "no_warnings": True,
-        "progress_hooks": [hook],
-        "overwrites": True,
-    }
+    # Try more stable clients / formats if YouTube resets the connection
+    attempts: list[dict[str, Any]] = [
+        {
+            "format": settings.youtube_format,
+            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+        },
+        {
+            "format": settings.youtube_format,
+            "extractor_args": {"youtube": {"player_client": ["ios", "web"]}},
+        },
+        {
+            # Progressive single-file fallback (more reliable on bad networks)
+            "format": "b[height<=720]/b[height<=480]/b",
+            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+        },
+    ]
 
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        video_id = str(info.get("id") or "video")
+    last_error: Exception | None = None
+    info: dict[str, Any] | None = None
 
+    for index, attempt in enumerate(attempts, start=1):
+        opts: dict[str, Any] = {
+            "outtmpl": outtmpl,
+            "format": attempt["format"],
+            "merge_output_format": "mp4",
+            "writesubtitles": True,
+            "writeautomaticsub": False,
+            "subtitleslangs": ["live_chat"],
+            "skip_download": False,
+            "quiet": True,
+            "no_warnings": True,
+            "progress_hooks": [hook],
+            "overwrites": True,
+            "continuedl": True,
+            "retries": settings.youtube_retries,
+            "fragment_retries": settings.youtube_fragment_retries,
+            "file_access_retries": 5,
+            "retry_sleep": {"http": 2, "fragment": 2, "file_access": 1},
+            "socket_timeout": settings.youtube_socket_timeout,
+            "concurrent_fragment_downloads": 1,  # more stable on reset-prone links
+            "extractor_args": attempt.get("extractor_args"),
+            "ignoreerrors": False,
+        }
+        if on_progress:
+            on_progress(
+                "video_download_log",
+                {"line": f"Download attempt {index}/{len(attempts)}…"},
+            )
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+            break
+        except DownloadError as exc:
+            last_error = exc
+            msg = str(exc)
+            if on_progress:
+                on_progress("video_download_log", {"line": f"Attempt {index} failed, retrying…"})
+            # Brief pause before next client/format
+            time.sleep(min(2 * index, 6))
+            if not _is_retryable_download_error(msg) and index == 1:
+                # Still try alternate clients once even for odd errors
+                continue
+            continue
+        except Exception as exc:  # network stack weirdness
+            last_error = exc
+            time.sleep(min(2 * index, 6))
+            continue
+
+    if info is None:
+        raise RuntimeError(_friendly_download_error(last_error)) from last_error
+
+    video_id = str(info.get("id") or "video")
     video_path = _find_video(out_dir, video_id)
     if not video_path:
         raise RuntimeError(f"yt-dlp finished but no video found in {out_dir}")
@@ -117,11 +175,9 @@ def download_youtube_video_and_chat(
         on_progress("chat_download_start", {"output": str(out_dir)})
 
     chat_path = _find_live_chat(out_dir, video_id)
-    # Normalize chat into a single json path our spike detector understands
     if chat_path and chat_path.suffix == ".json":
         normalized = out_dir / f"{video_id}.chat.json"
         if chat_path.resolve() != normalized.resolve():
-            # Keep original; also write normalized marker path via symlink-like copy name
             normalized.write_text(chat_path.read_text(encoding="utf-8", errors="ignore"), encoding="utf-8")
             chat_path = normalized
 
@@ -132,6 +188,36 @@ def download_youtube_video_and_chat(
         )
 
     return video_path, chat_path
+
+
+def _is_retryable_download_error(message: str) -> bool:
+    text = message.lower()
+    needles = [
+        "connection reset",
+        "connection broken",
+        "forcibly closed",
+        "timed out",
+        "timeout",
+        "10054",
+        "eof occurred",
+        "ssl",
+        "http error 5",
+        "fragment not found",
+        "server returned 403",
+        "server returned 429",
+    ]
+    return any(n in text for n in needles)
+
+
+def _friendly_download_error(exc: Exception | None) -> str:
+    raw = str(exc or "unknown download error")
+    if _is_retryable_download_error(raw):
+        return (
+            "YouTube closed the download connection (network reset). "
+            "This is usually temporary — click Find clips again. "
+            f"Details: {raw[:300]}"
+        )
+    return f"YouTube download failed: {raw[:500]}"
 
 
 def _find_video(out_dir: Path, video_id: str) -> Path | None:

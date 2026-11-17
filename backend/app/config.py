@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     twitch_download_quality: str = "720p60"
     # yt-dlp format string for YouTube
     youtube_format: str = "bv*[height<=720]+ba/b[height<=720]/b"
+    youtube_retries: int = 12
+    youtube_fragment_retries: int = 20
+    youtube_socket_timeout: int = 30
 
 
 settings = Settings()
