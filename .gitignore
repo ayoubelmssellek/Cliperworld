@@ -1,0 +1,26 @@
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+data/
+*.log
+.DS_Store
+frontend/dist/
+backend/.pytest_cache/
+backend/.ruff_cache/
+
+# Heavy third-party clones / binaries — friends run scripts/fetch-vendor.ps1
+vendor/TwitchDownloader/
+vendor/openshorts/
+vendor/whisperX/
+vendor/PySceneDetect/
+vendor/auto-editor/
+vendor/remotion/
+vendor/bin/
+vendor/**/*.zip
+
+# Keep vendor README tracked
+!vendor/README.md
