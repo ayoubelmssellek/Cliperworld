@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from app.config import settings
 from app.models import Job, JobStatus, Platform
-from app.pipeline.detect import detect_platform
+from app.pipeline.detect import normalize_input_url
 
 _lock = threading.RLock()
 
@@ -21,20 +21,30 @@ def _job_path(job_id: str) -> Path:
 
 
 def create_job(url: str, *, max_clips: int, with_captions: bool) -> Job:
-    platform = detect_platform(url)
-    if platform is None:
-        raise ValueError("URL must be a Twitch VOD or YouTube link")
+    try:
+        resolved_url, platform, resolve_meta = normalize_input_url(url)
+    except ValueError:
+        raise
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+
     now = time.time()
     job = Job(
         id=uuid.uuid4().hex[:12],
-        url=url,
+        url=resolved_url,
         platform=platform,
         status=JobStatus.queued,
-        message="Queued",
+        message=(
+            f"Resolved channel → latest VOD {resolve_meta.get('vod_id')}"
+            if resolve_meta.get("resolved_from_channel")
+            else "Queued"
+        ),
         with_captions=with_captions,
         max_clips=max_clips,
         created_at=now,
         updated_at=now,
+        meta={"resolve": resolve_meta} if resolve_meta else {},
+        vod_id=resolve_meta.get("vod_id"),
     )
     save_job(job)
     return job

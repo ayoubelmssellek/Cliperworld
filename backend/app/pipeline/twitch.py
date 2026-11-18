@@ -49,6 +49,56 @@ def twitch_downloader_available() -> bool:
         return False
 
 
+def resolve_latest_vod_from_channel(channel: str) -> tuple[str, str]:
+    """
+    Resolve https://www.twitch.tv/{channel} → latest VOD URL + id.
+    Uses yt-dlp flat playlist of the channel videos page.
+    """
+    import yt_dlp
+
+    login = channel.strip().lstrip("@")
+    playlist = f"https://www.twitch.tv/{login}/videos?filter=archives&sort=time"
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": True,
+        "playlistend": 5,
+        "skip_download": True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(playlist, download=False)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Could not load VODs for Twitch channel '{login}'. "
+            f"Paste a VOD link like https://www.twitch.tv/videos/123456789 instead. ({exc})"
+        ) from exc
+
+    entries = info.get("entries") if isinstance(info, dict) else None
+    if not entries:
+        raise RuntimeError(
+            f"No VODs found for Twitch channel '{login}'. "
+            "They may have VODs disabled, or nothing archived yet."
+        )
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        vod_id = str(entry.get("id") or "").strip()
+        # Twitch VOD ids are numeric; skip clips/highlights if mixed in
+        if not vod_id.isdigit():
+            url = str(entry.get("url") or entry.get("webpage_url") or "")
+            parsed = parse_twitch_vod_id(url)
+            if parsed:
+                vod_id = parsed
+        if vod_id.isdigit():
+            return f"https://www.twitch.tv/videos/{vod_id}", vod_id
+
+    raise RuntimeError(
+        f"No archive VODs found for '{login}'. Paste a direct VOD URL instead."
+    )
+
+
 def fetch_vod_info(vod_id: str) -> dict[str, Any]:
     """
     TwitchDownloaderCLI info --format Raw

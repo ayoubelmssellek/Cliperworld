@@ -141,8 +141,17 @@ export default function App() {
         body: JSON.stringify({ url, with_captions: withCaptions, max_clips: 12 }),
       })
       if (!res.ok) {
-        const text = await res.text()
-        throw new Error(text || 'Failed to start job')
+        let message = 'Failed to start job'
+        try {
+          const body = await res.json()
+          if (typeof body?.detail === 'string') message = body.detail
+          else if (Array.isArray(body?.detail))
+            message = body.detail.map((d: { msg?: string }) => d.msg || '').filter(Boolean).join(' ')
+          else message = JSON.stringify(body)
+        } catch {
+          message = (await res.text()) || message
+        }
+        throw new Error(message)
       }
       const data = await res.json()
       setJob(data.job)
@@ -160,8 +169,9 @@ export default function App() {
           Cliper<span>world</span>
         </h1>
         <p className="tagline">
-          Paste a Twitch VOD or YouTube link. We find chat blow-ups (or loud
-          moments), cut clips, and package them for Shorts.
+          Paste a Twitch VOD, Twitch channel (uses latest VOD), or YouTube link.
+          We find chat blow-ups (or loud moments), cut clips, and package them for
+          Shorts.
         </p>
 
         <form className="composer" onSubmit={onSubmit}>
@@ -171,7 +181,7 @@ export default function App() {
               id="vod"
               type="url"
               required
-              placeholder="https://www.twitch.tv/videos/… or https://youtube.com/watch?v=…"
+              placeholder="https://www.twitch.tv/lacy or https://www.twitch.tv/videos/…"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
             />

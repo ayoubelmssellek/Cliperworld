@@ -1,9 +1,14 @@
-from app.pipeline.detect import detect_platform, parse_youtube_id
+from app.pipeline.detect import detect_platform, parse_twitch_channel, parse_youtube_id
 from app.models import Platform
 
 
 def test_detect_twitch():
     assert detect_platform("https://www.twitch.tv/videos/2928036561") == Platform.twitch
+
+
+def test_detect_twitch_channel():
+    assert parse_twitch_channel("https://www.twitch.tv/lacy") == "lacy"
+    assert detect_platform("https://www.twitch.tv/lacy") == Platform.twitch
 
 
 def test_detect_youtube():
