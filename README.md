@@ -35,10 +35,14 @@ cd cliperworld
 This clones / downloads:
 
 - [TwitchDownloader](https://github.com/lay295/TwitchDownloader) (+ Windows CLI binary)
-- [OpenShorts](https://github.com/mutonby/openshorts)
+- [Clips Kitty / clips-studio](https://github.com/ColinGPT9/clips-studio) (9:16 fit_blur + Twitch chat hype)
+- [OpenShorts](https://github.com/mutonby/openshorts) (9:16 reframe fallback)
+- [Vertify](https://github.com/daylennguyen/vertify) (16:9 → 9:16 blur Shorts CLI)
 - [WhisperX](https://github.com/m-bain/whisperX)
 - [PySceneDetect](https://github.com/Breakthrough/PySceneDetect)
 - [Auto-Editor](https://github.com/WyattBlue/auto-editor)
+
+See [docs/VENDOR-STACK.md](docs/VENDOR-STACK.md) for **what each repo powers**.
 
 Check: `vendor\bin\TwitchDownloaderCLI\TwitchDownloaderCLI.exe` should exist.
 
@@ -60,7 +64,16 @@ npm run dev
 
 Open **http://127.0.0.1:5173**
 
-You should see tool pills like `ffmpeg: ready`, `twitch downloader: ready`, and `yt dlp: ready`.
+You should see tool pills like `ffmpeg: ready`, `twitch downloader: ready`, `clips studio: ready`.
+
+**Optional but powerful — Gemma (Clips Kitty AI brain):**
+
+```powershell
+# install Ollama from https://ollama.com then:
+.\scripts\setup-gemma.ps1
+```
+
+Health should then show `ollama: ready` and `gemma: ready`. Without it, chat-spike clipping still works.
 
 ### 4. Clip a video
 
@@ -96,6 +109,8 @@ cliperworld/
 | yt-dlp | Download YouTube video + live chat |
 | Chat / audio spike detector | Find hype moments (no AI required) |
 | FFmpeg | Cut / encode |
+| Clips Kitty + Vertify + OpenShorts | 9:16 Shorts (fit_blur / blur fill / reframe) |
+| Clips Kitty chat_moments | Twitch hype classes (POG, KEKW, CLIP IT…) |
 | Auto-Editor | Optional silence trim |
 | PySceneDetect | Optional snap to scene cuts |
 | WhisperX + OpenShorts | Optional captions |

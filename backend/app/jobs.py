@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from app.config import settings
 from app.models import Job, JobStatus, Platform
 from app.pipeline.detect import normalize_input_url
+from app.pipeline.quality import normalize_quality, quality_label
 
 _lock = threading.RLock()
 
@@ -20,7 +21,34 @@ def _job_path(job_id: str) -> Path:
     return settings.data_dir / "jobs" / f"{job_id}.json"
 
 
-def create_job(url: str, *, max_clips: int, with_captions: bool) -> Job:
+def _normalize_layout(layout: str | None) -> str:
+    key = (layout or "blur").strip().lower()
+    allowed = {"blur", "full_hook", "letterbox_hook", "explain", "cam_hook_game", "game_hook_cam", "face"}
+    if key in {"letterbox_hook", "explain"}:
+        return "full_hook"
+    return key if key in allowed else "blur"
+
+
+def _clamp_zoom(value: float | None, *, lo: float, hi: float, default: float) -> float:
+    try:
+        z = float(value) if value is not None else default
+    except (TypeError, ValueError):
+        z = default
+    return max(lo, min(hi, z))
+
+
+def create_job(
+    url: str,
+    *,
+    max_clips: int,
+    with_captions: bool,
+    quality: str = "720",
+    with_gemma: bool = True,
+    layout: str = "blur",
+    cam_zoom: float = 1.0,
+    game_zoom: float = 1.0,
+    game_pan: float = 0.55,
+) -> Job:
     try:
         resolved_url, platform, resolve_meta = normalize_input_url(url)
     except ValueError:
@@ -28,7 +56,21 @@ def create_job(url: str, *, max_clips: int, with_captions: bool) -> Job:
     except RuntimeError as exc:
         raise ValueError(str(exc)) from exc
 
+    q = normalize_quality(quality)
+    layout_id = _normalize_layout(layout)
+    cam_z = _clamp_zoom(cam_zoom, lo=0.7, hi=1.5, default=1.0)
+    game_z = _clamp_zoom(game_zoom, lo=1.0, hi=2.0, default=1.0)
+    game_p = _clamp_zoom(game_pan, lo=0.0, hi=1.0, default=0.55)
     now = time.time()
+    meta: dict = {
+        "quality_label": quality_label(q),
+        "layout": layout_id,
+        "cam_zoom": cam_z,
+        "game_zoom": game_z,
+        "game_pan": game_p,
+    }
+    if resolve_meta:
+        meta["resolve"] = resolve_meta
     job = Job(
         id=uuid.uuid4().hex[:12],
         url=resolved_url,
@@ -40,10 +82,16 @@ def create_job(url: str, *, max_clips: int, with_captions: bool) -> Job:
             else "Queued"
         ),
         with_captions=with_captions,
+        with_gemma=with_gemma,
         max_clips=max_clips,
+        quality=q,
+        layout=layout_id,
+        cam_zoom=cam_z,
+        game_zoom=game_z,
+        game_pan=game_p,
         created_at=now,
         updated_at=now,
-        meta={"resolve": resolve_meta} if resolve_meta else {},
+        meta=meta,
         vod_id=resolve_meta.get("vod_id"),
     )
     save_job(job)

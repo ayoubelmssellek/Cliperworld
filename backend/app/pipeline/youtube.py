@@ -60,6 +60,8 @@ def download_youtube_video_and_chat(
     url: str,
     out_dir: Path,
     *,
+    format_selector: str | None = None,
+    fallback_format: str | None = None,
     on_progress: ProgressCb | None = None,
 ) -> tuple[Path, Path | None]:
     """
@@ -72,6 +74,8 @@ def download_youtube_video_and_chat(
 
     out_dir.mkdir(parents=True, exist_ok=True)
     outtmpl = str(out_dir / "%(id)s.%(ext)s")
+    primary = format_selector or settings.youtube_format
+    fallback = fallback_format or "b[height<=720]/b[height<=480]/b"
 
     def hook(d: dict[str, Any]) -> None:
         if not on_progress:
@@ -93,21 +97,21 @@ def download_youtube_video_and_chat(
             on_progress("video_download_log", {"line": "Download finished, processing…"})
 
     if on_progress:
-        on_progress("video_download_start", {"quality": settings.youtube_format, "output": str(out_dir)})
+        on_progress("video_download_start", {"quality": primary, "output": str(out_dir)})
 
     # Try more stable clients / formats if YouTube resets the connection
     attempts: list[dict[str, Any]] = [
         {
-            "format": settings.youtube_format,
+            "format": primary,
             "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
         },
         {
-            "format": settings.youtube_format,
+            "format": primary,
             "extractor_args": {"youtube": {"player_client": ["ios", "web"]}},
         },
         {
             # Progressive single-file fallback (more reliable on bad networks)
-            "format": "b[height<=720]/b[height<=480]/b",
+            "format": fallback,
             "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
         },
     ]

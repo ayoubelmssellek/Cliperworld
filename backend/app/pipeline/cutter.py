@@ -83,7 +83,7 @@ def cut_clip(video_path: Path, start: float, end: float, out_path: Path) -> Path
         "-c:v",
         "libx264",
         "-preset",
-        "veryfast",
+        "ultrafast",
         "-crf",
         "23",
         "-c:a",
@@ -93,7 +93,14 @@ def cut_clip(video_path: Path, start: float, end: float, out_path: Path) -> Path
         str(out_path),
     ]
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "").strip()
         raise RuntimeError(f"ffmpeg cut failed: {detail[-2000:]}") from exc
@@ -104,7 +111,11 @@ def maybe_silence_trim(clip_path: Path) -> Path:
     """
     Uses vendored Auto-Editor:
       vendor/auto-editor → https://github.com/WyattBlue/auto-editor
+    Off by default — each call re-encodes the clip again and dominated Cut time.
     """
+    if not settings.silence_trim:
+        return clip_path
+
     out = clip_path.with_name(f"{clip_path.stem}.tight{clip_path.suffix}")
 
     if shutil.which(settings.auto_editor_bin):
@@ -126,6 +137,8 @@ def maybe_silence_trim(clip_path: Path) -> Path:
                 check=True,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 env={**dict(**{k: v for k, v in __import__("os").environ.items()}), "PYTHONPATH": env_pythonpath},
             )
             return out if out.exists() else clip_path
@@ -135,7 +148,14 @@ def maybe_silence_trim(clip_path: Path) -> Path:
         return clip_path
 
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         return out if out.exists() else clip_path
     except (subprocess.CalledProcessError, FileNotFoundError):
         return clip_path

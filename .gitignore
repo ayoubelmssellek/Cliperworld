@@ -19,6 +19,10 @@ vendor/whisperX/
 vendor/PySceneDetect/
 vendor/auto-editor/
 vendor/remotion/
+vendor/clips-studio/
+vendor/StreamCut/
+vendor/Auto-Clipper/
+vendor/Gaming-Clipper/
 vendor/bin/
 vendor/**/*.zip
 

@@ -32,8 +32,12 @@ def load_twitch_chat_offsets(chat_path: Path) -> list[tuple[float, str]]:
 
 
 def _from_twitch(data: dict) -> list[tuple[float, str]]:
+    return [(t, text) for t, _who, text in _from_twitch_full(data)]
+
+
+def _from_twitch_full(data: dict) -> list[tuple[float, str, str]]:
     comments = data.get("comments") or data.get("Comments") or []
-    rows: list[tuple[float, str]] = []
+    rows: list[tuple[float, str, str]] = []
     for comment in comments:
         offset = (
             comment.get("content_offset_seconds")
@@ -47,9 +51,30 @@ def _from_twitch(data: dict) -> list[tuple[float, str]]:
             text = message.get("body") or message.get("Body") or ""
         else:
             text = str(message)
-        rows.append((float(offset), text.strip()))
+        commenter = comment.get("commenter") or comment.get("Commenter") or {}
+        if isinstance(commenter, dict):
+            who = str(commenter.get("display_name") or commenter.get("name") or "chat")
+        else:
+            who = "chat"
+        rows.append((float(offset), who, text.strip()))
     rows.sort(key=lambda r: r[0])
     return rows
+
+
+def load_chat_with_authors(chat_path: Path) -> list[tuple[float, str, str]]:
+    """[(offset, author, text)] for Clips Kitty chat_moments."""
+    text = chat_path.read_text(encoding="utf-8", errors="ignore").strip()
+    if not text:
+        return []
+    if text.startswith("{"):
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict) and (data.get("comments") or data.get("Comments")):
+                return _from_twitch_full(data)
+        except json.JSONDecodeError:
+            pass
+    # YouTube live chat: author unknown → "chat"
+    return [(t, "chat", m) for t, m in _from_youtube_live_chat(text)]
 
 
 def _from_youtube_live_chat(raw: str) -> list[tuple[float, str]]:
@@ -159,21 +184,60 @@ def detect_chat_spikes(
         "bro",
     }
 
+    # Clips Kitty chat_moments: POG / KEKW / CLIP IT class spikes (best-of)
+    kitty_bonus: dict[int, float] = defaultdict(float)
+    kitty_labels: dict[int, list[str]] = defaultdict(list)
+    try:
+        from app.pipeline.clips_studio import chat_hype_events
+
+        duration = max((o for o, _ in events), default=0.0) + window
+        full = load_chat_with_authors(chat_path)
+        for ev in chat_hype_events(full, duration):
+            sec = float(ev.get("second") or 0)
+            bucket = int(sec // window)
+            kitty_bonus[bucket] += 3.0
+            label = str(ev.get("label") or "").strip()
+            if label:
+                kitty_labels[bucket].append(label[:80])
+    except Exception:
+        pass
+
     raw: list[ChatSpike] = []
     for bucket, msgs in buckets.items():
         count = len(msgs)
-        if count < threshold:
+        if count < threshold and kitty_bonus.get(bucket, 0) <= 0:
+            continue
+        if count < max(4, min_msgs // 2) and kitty_bonus.get(bucket, 0) <= 0:
             continue
         peak = (bucket + 0.5) * window
         hype_bonus = sum(1 for m in msgs if any(t in m.lower() for t in hype_tokens))
-        score = float(count) + hype_bonus * 0.75
+        score = float(count) + hype_bonus * 0.75 + kitty_bonus.get(bucket, 0.0)
         samples = [m for m in msgs if m][:5]
+        for label in kitty_labels.get(bucket, [])[:2]:
+            if label not in samples:
+                samples.insert(0, label)
         raw.append(
             ChatSpike(
                 peak_second=peak,
                 score=score,
                 message_count=count,
-                sample_messages=samples,
+                sample_messages=samples[:5],
+            )
+        )
+
+    # Pure Clips Kitty chat-class peaks that our velocity gate would miss
+    seen_buckets = {int(s.peak_second // window) for s in raw}
+    for bucket, bonus in kitty_bonus.items():
+        if bucket in seen_buckets or bonus <= 0:
+            continue
+        peak = (bucket + 0.5) * window
+        labels = kitty_labels.get(bucket, [])[:5]
+        raw.append(
+            ChatSpike(
+                peak_second=peak,
+                score=float(bonus) + 8.0,
+                message_count=max(1, int(bonus)),
+                sample_messages=labels or ["chat hype"],
             )
         )
 
